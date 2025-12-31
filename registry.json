@@ -1,0 +1,19 @@
+{
+  "$schema": "https://ocx.kdco.dev/schema/registry.json",
+  "name": "kdco-notify",
+  "description": "Native OS notifications for OpenCode - know when tasks complete",
+  "components": [
+    {
+      "name": "kdco-notify",
+      "description": "Native desktop notifications using OS notification centers",
+      "type": "ocx:plugin",
+      "files": [
+        {
+          "path": "src/plugin/kdco-notify.ts",
+          "target": "plugin/kdco-notify.ts"
+        }
+      ],
+      "npmDependencies": ["node-notifier"]
+    }
+  ]
+}
