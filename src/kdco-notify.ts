@@ -22,11 +22,11 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
-import type { Event, createOpencodeClient } from "@opencode-ai/sdk"
-// @ts-expect-error - installed at runtime by OCX
-import notifier from "node-notifier"
+import type { createOpencodeClient, Event } from "@opencode-ai/sdk"
 // @ts-expect-error - installed at runtime by OCX
 import detectTerminal from "detect-terminal"
+// @ts-expect-error - installed at runtime by OCX
+import notifier from "node-notifier"
 
 // ==========================================
 // TYPE DEFINITIONS
