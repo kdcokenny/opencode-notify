@@ -10,7 +10,9 @@ A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native de
 
 - **Native feel** - Uses macOS Notification Center, Windows Toast, Linux notify-send
 - **Smart defaults** - Only notifies for parent sessions, not every sub-task
-- **Event-aware sounds** - Different sounds for completion, errors, and permission requests
+- **Terminal-aware** - Suppresses notifications when your terminal is focused
+- **Click-to-focus** - Click the notification to bring your terminal to the foreground
+- **Auto-detection** - Automatically detects 37+ terminal emulators (Ghostty, Kitty, iTerm2, WezTerm, etc.)
 - **Zero config** - Works out of the box, customize if you want
 
 ## Part of KDCO
@@ -41,7 +43,7 @@ ocx add kdco-notify
 Copy the source files directly into your `.opencode/` directory:
 
 **Caveats:**
-- You'll need to manually install dependencies (`node-notifier`)
+- You'll need to manually install dependencies (`node-notifier`, `detect-terminal`)
 - Updates require manual re-copying
 
 The source is in [`src/`](./src) - copy the plugin file to `.opencode/plugin/kdco-notify.ts`.
@@ -59,6 +61,37 @@ The source is in [`src/`](./src) - copy the plugin file to `.opencode/plugin/kdc
 | Permission needed | Yes | Submarine | AI is blocked, waiting for you |
 | Child session complete | No | - | Orchestrator handles this |
 
+### Terminal Detection
+
+Uses [`detect-terminal`](https://github.com/jonschlinkert/detect-terminal) to automatically identify your terminal emulator. Supports 37+ terminals including:
+
+- Ghostty
+- Kitty
+- iTerm2
+- WezTerm
+- Alacritty
+- Hyper
+- Terminal.app
+- Windows Terminal
+- VS Code integrated terminal
+- And many more...
+
+### Focus Awareness
+
+Inspired by [Ghostty](https://github.com/ghostty-org/ghostty)'s notification system:
+
+- **Suppresses notifications** when your terminal is the active window
+- **Only notifies** when you're away or in another app
+- Prevents notification spam during active coding sessions
+
+### Click-to-Focus
+
+On macOS, clicking a notification brings your terminal to the foreground. The plugin:
+
+1. Detects which terminal you're using
+2. Looks up its bundle ID dynamically
+3. Uses that for the notification's click action
+
 ### Native OS Integration
 
 Uses [node-notifier](https://github.com/mikaelbr/node-notifier) which bundles native binaries:
@@ -75,7 +108,9 @@ Create `~/.config/opencode/kdco-notify.json` to customize:
 
 ```json
 {
+  "enabled": true,
   "notifyChildSessions": false,
+  "suppressWhenFocused": true,
   "sounds": {
     "idle": "Glass",
     "error": "Basso",
@@ -86,13 +121,26 @@ Create `~/.config/opencode/kdco-notify.json` to customize:
 
 **Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
 
+## Platform Support
+
+| Feature | macOS | Windows | Linux |
+|---------|-------|---------|-------|
+| Native notifications | ✅ | ✅ | ✅ |
+| Custom sounds | ✅ | ❌ | ❌ |
+| Focus detection | ✅ | ❌ | ❌ |
+| Click-to-focus | ✅ | ❌ | ❌ |
+| Terminal detection | ✅ | ✅ | ✅ |
+
 ## Usage
 
 Once installed, the plugin automatically:
 
-1. Listens for `session.idle`, `session.error`, and `permission.updated` events
-2. Checks if the session is a parent (root) session
-3. Sends a native notification with appropriate sound
+1. Detects your terminal emulator on startup
+2. Looks up its bundle ID for click-to-focus
+3. Listens for `session.idle`, `session.error`, and `permission.updated` events
+4. Checks if the session is a parent (root) session
+5. Checks if your terminal is focused (suppresses if yes)
+6. Sends a native notification with appropriate sound
 
 No tools are added - it's purely event-driven.
 
