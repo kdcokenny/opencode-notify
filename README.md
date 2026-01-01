@@ -1,110 +1,68 @@
 # opencode-notify
 
-> Native OS notifications for OpenCode. Know when your AI is done or needs you.
+> Know when your AI needs you back. Native OS notifications for OpenCode.
 
-A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input.
+A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. Stop tab-switching to check if it's done.
 
-## What is this?
+## Why This Exists
 
-`opencode-notify` uses native OS notification systems to keep you informed without watching the terminal:
+You delegate a task and switch to another window. Now you're checking back every 30 seconds. Did it finish? Did it error? Is it waiting for permission?
 
-- **Native feel** - Uses macOS Notification Center, Windows Toast, Linux notify-send
-- **Smart defaults** - Only notifies for parent sessions, not every sub-task
-- **Terminal-aware** - Suppresses notifications when your terminal is focused
-- **Click-to-focus** - Click the notification to bring your terminal to the foreground (macOS)
-- **Auto-detection** - Automatically detects 37+ terminal emulators (Ghostty, Kitty, iTerm2, WezTerm, etc.)
-- **Zero config** - Works out of the box, customize if you want
+This plugin solves that:
 
-## Part of KDCO
+- **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
+- **Native feel** - Uses macOS Notification Center, Windows Toast, or Linux notify-send.
+- **Smart defaults** - Won't spam you. Only notifies for meaningful events, and only when you're not already looking at the terminal.
 
-This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco), a collection of plugins, agents, and skills for OpenCode.
-
-## Installation (Recommended)
+## Installation
 
 Install via [OCX](https://github.com/kdcokenny/ocx), the package manager for OpenCode extensions:
 
 ```bash
 # Install OCX
 curl -fsSL https://ocx.kdco.dev/install.sh | sh
-# Or: npm install -g ocx
 
-# Initialize OCX in your project
+# Initialize and add the plugin
 ocx init
-
-# Add the KDCO registry
 ocx registry add --name kdco https://registry.kdco.dev
-
-# Install notifications (included in kdco-workspace)
 ocx add kdco-notify
 ```
 
-## Manual Installation
+Or get everything at once with `kdco-workspace`:
 
-Copy the source files directly into your `.opencode/` directory:
+```bash
+ocx add kdco-workspace
+```
 
-**Caveats:**
-- You'll need to manually install dependencies (`node-notifier`, `detect-terminal`)
-- Updates require manual re-copying
-
-The source is in [`src/`](./src) - copy the plugin file to `.opencode/plugin/`.
-
-## Features
-
-### Smart Notification Philosophy
+## How It Works
 
 > "Notify the human when the AI needs them back, not for every micro-event."
 
 | Event | Notifies? | Sound | Why |
 |-------|-----------|-------|-----|
-| Parent session complete | Yes | Glass | Main task done - time to review |
-| Parent session error | Yes | Basso | Something broke - needs attention |
+| Session complete | Yes | Glass | Main task done - time to review |
+| Session error | Yes | Basso | Something broke - needs attention |
 | Permission needed | Yes | Submarine | AI is blocked, waiting for you |
-| Child session complete | No | - | Orchestrator handles this |
+| Sub-task complete | No | - | Parent session handles orchestration |
 
-### Terminal Detection
+The plugin automatically:
+1. Detects your terminal emulator (supports 37+ terminals)
+2. Suppresses notifications when your terminal is focused
+3. Enables click-to-focus on macOS (click notification → terminal foregrounds)
 
-Uses [`detect-terminal`](https://github.com/jonschlinkert/detect-terminal) to automatically identify your terminal emulator. Supports 37+ terminals including:
+## Platform Support
 
-- Ghostty
-- Kitty
-- iTerm2
-- WezTerm
-- Alacritty
-- Hyper
-- Terminal.app
-- Windows Terminal
-- VS Code integrated terminal
-- And many more...
+| Feature | macOS | Windows | Linux |
+|---------|-------|---------|-------|
+| Native notifications | Yes | Yes | Yes |
+| Custom sounds | Yes | No | No |
+| Focus detection | Yes | No | No |
+| Click-to-focus | Yes | No | No |
+| Terminal detection | Yes | Yes | Yes |
 
-### Focus Awareness
+## Configuration (Optional)
 
-Inspired by [Ghostty](https://github.com/ghostty-org/ghostty)'s notification system:
-
-- **Suppresses notifications** when your terminal is the active window
-- **Only notifies** when you're away or in another app
-- Prevents notification spam during active coding sessions
-
-### Click-to-Focus
-
-On macOS, clicking a notification brings your terminal to the foreground. The plugin:
-
-1. Detects which terminal you're using
-2. Looks up its bundle ID dynamically
-3. Uses that for the notification's click action
-
-### Native OS Integration
-
-Uses [node-notifier](https://github.com/mikaelbr/node-notifier) which bundles native binaries:
-
-- **macOS** - terminal-notifier (NSUserNotificationCenter)
-- **Windows** - SnoreToast (Windows Toast API)
-- **Linux** - notify-send (libnotify)
-
-No `brew install` or system dependencies required.
-
-### Configuration (Optional)
-
-Create `~/.config/opencode/kdco-notify.json` to customize:
+Works out of the box. To customize, create `~/.config/opencode/kdco-notify.json`:
 
 ```json
 {
@@ -121,32 +79,40 @@ Create `~/.config/opencode/kdco-notify.json` to customize:
 
 **Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
 
-## Platform Support
+## FAQ
 
-| Feature | macOS | Windows | Linux |
-|---------|-------|---------|-------|
-| Native notifications | ✅ | ✅ | ✅ |
-| Custom sounds | ✅ | ❌ | ❌ |
-| Focus detection | ✅ | ❌ | ❌ |
-| Click-to-focus | ✅ | ❌ | ❌ |
-| Terminal detection | ✅ | ✅ | ✅ |
+### Does this add bloat to my context?
 
-## Usage
+Minimal footprint. The plugin is event-driven - it listens for session events and fires notifications. No tools are added to your conversation, no prompts are injected beyond initial setup.
 
-Once installed, the plugin automatically:
+### Will I get spammed with notifications?
 
-1. Detects your terminal emulator on startup
-2. Looks up its bundle ID for click-to-focus
-3. Listens for `session.idle`, `session.error`, and `permission.updated` events
-4. Checks if the session is a parent (root) session
-5. Checks if your terminal is focused (suppresses if yes)
-6. Sends a native notification with appropriate sound
+No. Smart defaults prevent noise:
+- Only notifies for parent sessions (not every sub-task)
+- Suppresses when your terminal is the active window
+- Batches notifications when multiple delegations complete together
 
-No tools are added - it's purely event-driven.
+### Can I disable it temporarily?
 
-## Source
+Set `"enabled": false` in the config file, or delete the config to return to defaults.
 
-The implementation is in [`src/`](./src). It's TypeScript, fully readable, and designed to be forked and customized.
+## Supported Terminals
+
+Uses [`detect-terminal`](https://github.com/jonschlinkert/detect-terminal) to automatically identify your terminal. Supports 37+ terminals including:
+
+Ghostty, Kitty, iTerm2, WezTerm, Alacritty, Hyper, Terminal.app, Windows Terminal, VS Code integrated terminal, and many more.
+
+## Manual Installation
+
+If you prefer not to use OCX, copy the source from [`src/`](./src) to `.opencode/plugin/`.
+
+**Caveats:**
+- Manually install dependencies (`node-notifier`, `detect-terminal`)
+- Updates require manual re-copying
+
+## Part of the OCX Ecosystem
+
+This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles notifications with background agents, specialist agents, and planning tools.
 
 ## License
 
