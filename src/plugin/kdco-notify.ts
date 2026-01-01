@@ -9,6 +9,7 @@
  * - Suppresses notifications when terminal is focused (like Ghostty does)
  * - Click notification to focus terminal
  * - Parent session only by default (no spam from sub-tasks)
+ * - OpenCode icon with automatic dark/light mode detection
  *
  * Uses node-notifier which bundles native binaries:
  * - macOS: terminal-notifier (native NSUserNotificationCenter)
@@ -181,6 +182,95 @@ async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
 }
 
 // ==========================================
+// DARK MODE DETECTION (Cross-Platform)
+// ==========================================
+
+async function isDarkMode(): Promise<boolean> {
+	const platform = process.platform
+
+	try {
+		if (platform === "darwin") {
+			// macOS: returns "Dark" if dark mode, throws/empty if light mode
+			const proc = Bun.spawn(["defaults", "read", "-g", "AppleInterfaceStyle"], {
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			const output = await new Response(proc.stdout).text()
+			return output.trim() === "Dark"
+		}
+
+		if (platform === "win32") {
+			// Windows: 0x0 = dark, 0x1 = light
+			const proc = Bun.spawn(
+				[
+					"reg",
+					"query",
+					"HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+					"/v",
+					"AppsUseLightTheme",
+				],
+				{
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			)
+			const output = await new Response(proc.stdout).text()
+			return output.includes("0x0")
+		}
+
+		if (platform === "linux") {
+			// Linux: Try freedesktop portal first (works across DEs)
+			try {
+				const proc = Bun.spawn(
+					[
+						"gdbus",
+						"call",
+						"--session",
+						"--dest",
+						"org.freedesktop.portal.Desktop",
+						"--object-path",
+						"/org/freedesktop/portal/desktop",
+						"--method",
+						"org.freedesktop.portal.Settings.Read",
+						"org.freedesktop.appearance",
+						"color-scheme",
+					],
+					{
+						stdout: "pipe",
+						stderr: "pipe",
+					},
+				)
+				const output = await new Response(proc.stdout).text()
+				return output.includes("1") // 1 = dark
+			} catch {
+				// Fallback: GNOME
+				const proc = Bun.spawn(
+					["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+					{
+						stdout: "pipe",
+						stderr: "pipe",
+					},
+				)
+				const output = await new Response(proc.stdout).text()
+				return output.includes("prefer-dark")
+			}
+		}
+	} catch {
+		// Default to light mode (use dark icon) if detection fails
+		return false
+	}
+
+	return false
+}
+
+function getIconPath(isDark: boolean): string {
+	// Dark mode = use light icon (visible on dark bg)
+	// Light mode = use dark icon (visible on light bg)
+	const iconName = isDark ? "opencode-icon-light.png" : "opencode-icon-dark.png"
+	return path.join(import.meta.dir, "assets", iconName)
+}
+
+// ==========================================
 // QUIET HOURS CHECK
 // ==========================================
 
@@ -228,16 +318,18 @@ interface NotificationOptions {
 	message: string
 	sound: string
 	terminalInfo: TerminalInfo
+	iconPath: string
 }
 
 function sendNotification(options: NotificationOptions): void {
-	const { title, message, sound, terminalInfo } = options
+	const { title, message, sound, terminalInfo, iconPath } = options
 
 	// Base notification options
 	const notifyOptions: Record<string, unknown> = {
 		title,
 		message,
 		sound,
+		icon: iconPath,
 	}
 
 	// macOS-specific: click to focus terminal
@@ -259,6 +351,7 @@ async function handleSessionIdle(
 	sessionID: string,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	iconPath: string,
 ): Promise<void> {
 	// Check if we should notify for this session
 	if (!config.notifyChildSessions) {
@@ -288,6 +381,7 @@ async function handleSessionIdle(
 		message: sessionTitle,
 		sound: config.sounds.idle,
 		terminalInfo,
+		iconPath,
 	})
 }
 
@@ -297,6 +391,7 @@ async function handleSessionError(
 	error: string | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	iconPath: string,
 ): Promise<void> {
 	// Check if we should notify for this session
 	if (!config.notifyChildSessions) {
@@ -317,12 +412,14 @@ async function handleSessionError(
 		message: errorMessage,
 		sound: config.sounds.error,
 		terminalInfo,
+		iconPath,
 	})
 }
 
 async function handlePermissionUpdated(
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	iconPath: string,
 ): Promise<void> {
 	// Always notify for permission events - AI is blocked waiting for human
 	// No parent check needed: permissions always need human attention
@@ -338,6 +435,7 @@ async function handlePermissionUpdated(
 		message: "OpenCode needs your input",
 		sound: config.sounds.permission,
 		terminalInfo,
+		iconPath,
 	})
 }
 
@@ -354,13 +452,23 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	// Detect terminal once at startup (cached for performance)
 	const terminalInfo = await detectTerminalInfo(config)
 
+	// Detect dark mode and get appropriate icon path
+	const darkMode = await isDarkMode()
+	const iconPath = getIconPath(darkMode)
+
 	return {
 		event: async ({ event }: { event: Event }): Promise<void> => {
 			switch (event.type) {
 				case "session.idle": {
 					const sessionID = event.properties.sessionID
 					if (sessionID) {
-						await handleSessionIdle(client as OpencodeClient, sessionID, config, terminalInfo)
+						await handleSessionIdle(
+							client as OpencodeClient,
+							sessionID,
+							config,
+							terminalInfo,
+							iconPath,
+						)
 					}
 					break
 				}
@@ -375,13 +483,14 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 							error,
 							config,
 							terminalInfo,
+							iconPath,
 						)
 					}
 					break
 				}
 
 				case "permission.updated": {
-					await handlePermissionUpdated(config, terminalInfo)
+					await handlePermissionUpdated(config, terminalInfo, iconPath)
 					break
 				}
 			}

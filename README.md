@@ -9,6 +9,8 @@ A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native de
 `opencode-notify` uses native OS notification systems to keep you informed without watching the terminal:
 
 - **Native feel** - Uses macOS Notification Center, Windows Toast, Linux notify-send
+- **OpenCode branding** - Shows the OpenCode icon in notifications
+- **Dark mode aware** - Automatically selects light or dark icon based on system appearance
 - **Smart defaults** - Only notifies for parent sessions, not every sub-task
 - **Terminal-aware** - Suppresses notifications when your terminal is focused
 - **Click-to-focus** - Click the notification to bring your terminal to the foreground
@@ -46,9 +48,13 @@ Copy the source files directly into your `.opencode/` directory:
 - You'll need to manually install dependencies (`node-notifier`, `detect-terminal`)
 - Updates require manual re-copying
 
-The source is in [`src/`](./src) - copy the plugin file to `.opencode/plugin/kdco-notify.ts`.
+The source is in [`src/`](./src) - copy the plugin file and assets to `.opencode/plugin/`.
 
 ## Features
+
+### OpenCode Branding
+
+Notifications display the official OpenCode icon, automatically selecting the appropriate variant based on your system's dark/light mode setting.
 
 ### Smart Notification Philosophy
 
@@ -60,6 +66,16 @@ The source is in [`src/`](./src) - copy the plugin file to `.opencode/plugin/kdc
 | Parent session error | Yes | Basso | Something broke - needs attention |
 | Permission needed | Yes | Submarine | AI is blocked, waiting for you |
 | Child session complete | No | - | Orchestrator handles this |
+
+### Cross-Platform Dark Mode Detection
+
+The plugin automatically detects your system's appearance:
+
+| Platform | Detection Method |
+|----------|-----------------|
+| **macOS** | `defaults read -g AppleInterfaceStyle` |
+| **Windows** | Registry: `AppsUseLightTheme` |
+| **Linux** | Freedesktop portal / GNOME gsettings |
 
 ### Terminal Detection
 
@@ -126,6 +142,8 @@ Create `~/.config/opencode/kdco-notify.json` to customize:
 | Feature | macOS | Windows | Linux |
 |---------|-------|---------|-------|
 | Native notifications | ✅ | ✅ | ✅ |
+| OpenCode icon | ✅ | ✅ | ✅ |
+| Dark mode detection | ✅ | ✅ | ✅ |
 | Custom sounds | ✅ | ❌ | ❌ |
 | Focus detection | ✅ | ❌ | ❌ |
 | Click-to-focus | ✅ | ❌ | ❌ |
@@ -137,10 +155,11 @@ Once installed, the plugin automatically:
 
 1. Detects your terminal emulator on startup
 2. Looks up its bundle ID for click-to-focus
-3. Listens for `session.idle`, `session.error`, and `permission.updated` events
-4. Checks if the session is a parent (root) session
-5. Checks if your terminal is focused (suppresses if yes)
-6. Sends a native notification with appropriate sound
+3. Detects system dark/light mode for icon selection
+4. Listens for `session.idle`, `session.error`, and `permission.updated` events
+5. Checks if the session is a parent (root) session
+6. Checks if your terminal is focused (suppresses if yes)
+7. Sends a native notification with OpenCode icon and appropriate sound
 
 No tools are added - it's purely event-driven.
 

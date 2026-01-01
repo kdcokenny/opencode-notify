@@ -5,12 +5,20 @@
   "components": [
     {
       "name": "kdco-notify",
-      "description": "Native desktop notifications with terminal detection and focus awareness",
+      "description": "Native desktop notifications with terminal detection, focus awareness, and dark mode support",
       "type": "ocx:plugin",
       "files": [
         {
           "path": "src/plugin/kdco-notify.ts",
           "target": "plugin/kdco-notify.ts"
+        },
+        {
+          "path": "src/plugin/assets/opencode-icon-dark.png",
+          "target": "plugin/assets/opencode-icon-dark.png"
+        },
+        {
+          "path": "src/plugin/assets/opencode-icon-light.png",
+          "target": "plugin/assets/opencode-icon-light.png"
         }
       ],
       "npmDependencies": ["node-notifier", "detect-terminal"]
