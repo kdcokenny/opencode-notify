@@ -25,13 +25,13 @@ curl -fsSL https://ocx.kdco.dev/install.sh | sh
 # Initialize and add the plugin
 ocx init
 ocx registry add --name kdco https://registry.kdco.dev
-ocx add kdco-notify
+ocx add kdco/notify
 ```
 
 Or get everything at once with `kdco-workspace`:
 
 ```bash
-ocx add kdco-workspace
+ocx add kdco/workspace
 ```
 
 ## How It Works
