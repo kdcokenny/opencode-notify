@@ -1,5 +1,5 @@
 /**
- * kdco-notify
+ * notify
  * Native OS notifications for OpenCode
  *
  * Philosophy: "Notify the human when the AI needs them back, not for every micro-event."
@@ -15,8 +15,6 @@
  * - Windows: SnoreToast (native toast notifications)
  * - Linux: notify-send (native desktop notifications)
  */
-
-/// <reference types="bun-types" />
 
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
