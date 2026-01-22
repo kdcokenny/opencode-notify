@@ -27,6 +27,8 @@ ocx registry add --name kdco https://registry.kdco.dev
 ocx add kdco/notify
 ```
 
+> **Tip:** Add `--global` to configure the registry globally instead of per-project.
+
 Or get everything at once with `kdco-workspace`:
 
 ```bash
