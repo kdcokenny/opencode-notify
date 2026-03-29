@@ -486,6 +486,11 @@ async function handleQuestionAsked(
 // ==========================================
 
 export const NotifyPlugin: Plugin = async (ctx) => {
+	// When invoked programmatically from a harness, suppress all notifications
+	if (process.env.OPENCODE_NO_NOTIFY === "1" || process.env.OPENCODE_NO_NOTIFY === "true") {
+		return {}
+	}
+
 	const { client } = ctx
 
 	// Load config once at startup

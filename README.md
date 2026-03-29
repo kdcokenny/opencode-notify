@@ -105,6 +105,16 @@ Configuration keys:
 - `sounds`: per-event sounds (`idle`, `error`, `permission`, optional `question`).
 - `quietHours`: scheduled suppression window.
 
+### Disabling notifications with `OPENCODE_NO_NOTIFY`
+
+When opencode is invoked programmatically from an external harness (build orchestrators, CI pipelines, automation scripts), desktop notifications are unhelpful and disruptive. Set the `OPENCODE_NO_NOTIFY` environment variable to suppress all notification types:
+
+```bash
+OPENCODE_NO_NOTIFY=1 opencode run "your task"
+```
+
+When set to `"1"` or `"true"`, the entire plugin is disabled at initialization — no event listeners are registered, no notifications are sent. This is opt-in; existing behavior is unchanged when the env var is not set.
+
 **Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
 
 ## FAQ
@@ -122,7 +132,7 @@ No. Smart defaults prevent noise:
 
 ### Can I disable it temporarily?
 
-This plugin does not currently expose an `enabled` config flag. To disable notifications, remove/uninstall the plugin (for example: `ocx remove kdco/notify`) and add it back when needed.
+Set the `OPENCODE_NO_NOTIFY=1` environment variable to suppress all notifications for a session. See [Configuration](#disabling-notifications-with-opencode_no_notify) for details. To uninstall entirely, run `ocx remove kdco/notify` and add it back when needed.
 
 ## Supported Terminals
 
