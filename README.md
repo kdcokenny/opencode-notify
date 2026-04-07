@@ -170,17 +170,6 @@ This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree
 
 This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
 
-Generated publish artifacts are not source of truth:
-
-- `src/` contains the source content.
-- `files/` and `dist/` are generated for publishing/install testing.
-
-To regenerate the publishable output locally from a clean checkout:
-
-```bash
-./scripts/build-registry.sh
-```
-
 If you want to update opencode-notify itself, start here:
 
 - https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/notify.ts
