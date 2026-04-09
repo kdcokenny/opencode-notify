@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "name": "nicobao",
+  "version": "1.0.6",
+  "author": "nicobao",
+  "components": [
+    {
+      "name": "notify-kitty",
+      "type": "plugin",
+      "description": "Native desktop notifications with terminal detection, Kitty-aware focus, same-tab suppression, and click-back restore"
+    }
+  ]
+}
