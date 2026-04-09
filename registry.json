@@ -10,8 +10,24 @@
       "npmDependencies": ["node-notifier", "detect-terminal"],
       "files": [
         {
-          "path": "src/kdco-notify.ts",
+          "path": "src/notify.ts",
           "target": "plugin/kdco-notify.ts"
+        },
+        {
+          "path": "src/notify/backend.ts",
+          "target": "plugin/notify/backend.ts"
+        },
+        {
+          "path": "src/notify/cmux.ts",
+          "target": "plugin/notify/cmux.ts"
+        },
+        {
+          "path": "src/kdco-primitives/types.ts",
+          "target": "plugin/kdco-primitives/types.ts"
+        },
+        {
+          "path": "src/kdco-primitives/with-timeout.ts",
+          "target": "plugin/kdco-primitives/with-timeout.ts"
         }
       ]
     }

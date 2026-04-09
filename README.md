@@ -107,6 +107,23 @@ Configuration keys:
 
 **Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
 
+## Kitty Setup
+
+If you want exact Kitty window/tab restore on notification click, enable Kitty remote control in `kitty.conf`:
+
+```conf
+allow_remote_control yes
+listen_on unix:/tmp/kitty-{kitty_pid}
+```
+
+Then restart Kitty before testing.
+
+Notes:
+
+- `allow_remote_control yes` enables the `kitty @` commands the plugin uses for exact window targeting.
+- `listen_on unix:/tmp/kitty-{kitty_pid}` ensures each Kitty instance exposes a stable socket path the plugin can address.
+- Without this config, macOS can still bring Kitty to the foreground, but the plugin cannot reliably target the exact originating Kitty window/tab.
+
 ## FAQ
 
 ### Does this add bloat to my context?

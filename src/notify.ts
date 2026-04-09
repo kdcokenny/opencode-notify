@@ -28,6 +28,7 @@ import detectTerminal from "detect-terminal"
 // @ts-expect-error - installed at runtime by OCX
 import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
+import { withTimeout } from "./kdco-primitives/with-timeout"
 import { sendNotificationWithFallback } from "./notify/backend"
 import { canUseCmuxNotification, sendCmuxNotification } from "./notify/cmux"
 
@@ -55,6 +56,29 @@ interface TerminalInfo {
 	name: string | null
 	bundleId: string | null
 	processName: string | null
+	kittyWindowID: string | null
+	kittyListenOn: string | null
+	kittyRemoteControlAvailable: boolean
+}
+
+interface KittyWindowEntry {
+	id?: number
+	is_focused?: boolean
+	is_self?: boolean
+}
+
+interface KittyTabEntry {
+	id?: number
+	is_active?: boolean
+	is_focused?: boolean
+	windows?: KittyWindowEntry[]
+}
+
+interface KittyOSWindowEntry {
+	id?: number
+	is_active?: boolean
+	is_focused?: boolean
+	tabs?: KittyTabEntry[]
 }
 
 const DEFAULT_CONFIG: NotifyConfig = {
@@ -151,7 +175,14 @@ async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 	const terminalName = config.terminal || detectTerminal() || null
 
 	if (!terminalName) {
-		return { name: null, bundleId: null, processName: null }
+		return {
+			name: null,
+			bundleId: null,
+			processName: null,
+			kittyWindowID: null,
+			kittyListenOn: null,
+			kittyRemoteControlAvailable: false,
+		}
 	}
 
 	// Get process name for focus detection
@@ -160,11 +191,18 @@ async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 	// Dynamically get bundle ID from macOS (no hardcoding!)
 	const bundleId = await getBundleId(processName)
 
-	return {
+	const terminalInfo: TerminalInfo = {
 		name: terminalName,
 		bundleId,
 		processName,
+		kittyWindowID: toNonEmptyString(process.env.KITTY_WINDOW_ID),
+		kittyListenOn: toNonEmptyString(process.env.KITTY_LISTEN_ON),
+		kittyRemoteControlAvailable: false,
 	}
+
+	terminalInfo.kittyRemoteControlAvailable = await canUseKittyRemoteControl(terminalInfo)
+
+	return terminalInfo
 }
 
 async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
@@ -173,9 +211,79 @@ async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
 
 	const frontmost = await getFrontmostApp()
 	if (!frontmost) return false
+	if (frontmost.toLowerCase() !== terminalInfo.processName.toLowerCase()) return false
 
-	// Case-insensitive comparison
-	return frontmost.toLowerCase() === terminalInfo.processName.toLowerCase()
+	const kittyWindowFocused = await isKittyWindowFocused(terminalInfo)
+	if (kittyWindowFocused !== null) {
+		return kittyWindowFocused
+	}
+
+	// Fall back to app-level suppression when Kitty cannot report the exact window.
+	return true
+}
+
+function buildKittyLsArgs(terminalInfo: TerminalInfo): string[] {
+	const args = ["@"]
+	if (terminalInfo.kittyListenOn) {
+		args.push("--to", terminalInfo.kittyListenOn)
+	}
+
+	args.push("ls")
+	return args
+}
+
+async function canUseKittyRemoteControl(terminalInfo: TerminalInfo): Promise<boolean> {
+	if (!terminalInfo.kittyWindowID) return false
+
+	try {
+		const proc = Bun.spawn(["kitty", ...buildKittyLsArgs(terminalInfo)], {
+			stdin: "ignore",
+			stdout: "ignore",
+			stderr: "ignore",
+		})
+		return (await proc.exited) === 0
+	} catch {
+		return false
+	}
+}
+
+async function isKittyWindowFocused(terminalInfo: TerminalInfo): Promise<boolean | null> {
+	if (!terminalInfo.kittyWindowID || !terminalInfo.kittyRemoteControlAvailable) return null
+
+	let proc: ReturnType<typeof Bun.spawn> | null = null
+	try {
+		proc = Bun.spawn(["kitty", ...buildKittyLsArgs(terminalInfo)], {
+			stdin: "ignore",
+			stdout: "pipe",
+			stderr: "ignore",
+		})
+		const [output, exitCode] = await withTimeout(
+			Promise.all([new Response(proc.stdout).text(), proc.exited]),
+			250,
+			"Kitty focus query timed out",
+		)
+		if (exitCode !== 0 || !output.trim()) return null
+
+		const osWindows = JSON.parse(output) as KittyOSWindowEntry[]
+		for (const osWindow of osWindows) {
+			for (const tab of osWindow.tabs ?? []) {
+				for (const window of tab.windows ?? []) {
+					if (String(window.id) === terminalInfo.kittyWindowID) {
+						return osWindow.is_focused === true && tab.is_focused === true
+					}
+				}
+			}
+		}
+	} catch {
+		try {
+			proc?.kill()
+		} catch {
+			// Ignore cleanup failures.
+		}
+		return null
+	}
+
+	return null
 }
 
 // ==========================================
@@ -217,6 +325,28 @@ async function isParentSession(client: OpencodeClient, sessionID: string): Promi
 	}
 }
 
+async function getSessionTitle(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
+	fallback: string,
+	options?: { prefix?: string },
+): Promise<string> {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return fallback
+
+	try {
+		const session = await client.session.get({ path: { id: normalizedSessionID } })
+		if (session.data?.title) {
+			const title = session.data.title.slice(0, 80)
+			return options?.prefix ? `${options.prefix}${title}` : title
+		}
+	} catch {
+		// Use the fallback text when session lookup fails.
+	}
+
+	return fallback
+}
+
 // ==========================================
 // NOTIFICATION SENDER
 // ==========================================
@@ -237,6 +367,7 @@ interface NotificationRuntime {
 const QUESTION_DEDUPE_WINDOW_MS = 1500
 const READY_DEDUPE_WINDOW_MS = 1500
 const PERMISSION_DEDUPE_WINDOW_MS = 1500
+const MACOS_NOTIFICATION_CLICK_TIMEOUT_SECONDS = 30
 
 type RecentNotifications = Map<string, number>
 
@@ -247,6 +378,10 @@ function toNonEmptyString(value: unknown): string | null {
 	if (!normalized) return null
 
 	return normalized
+}
+
+function isACPHostedSession(argv: string[] = process.argv): boolean {
+	return argv.slice(1, 3).some((arg) => arg.trim().toLowerCase() === "acp")
 }
 
 function shouldSendDedupedNotification(
@@ -321,6 +456,111 @@ function buildPermissionEventDedupeKey(properties: unknown): string | null {
 	return `permission:request:${normalizedRequestID}`
 }
 
+function shouldUseKittySocketRemoteControl(terminalInfo: TerminalInfo): boolean {
+	return process.platform === "darwin" && terminalInfo.kittyRemoteControlAvailable
+}
+
+function isKittyTerminal(terminalInfo: TerminalInfo): boolean {
+	return terminalInfo.name?.toLowerCase() === "kitty"
+}
+
+function shouldUseKittyClickFocus(terminalInfo: TerminalInfo): boolean {
+	// Only opt into the callback-based click-to-focus path when Kitty remote control
+	// is actually available. The generic notification path is more reliable when the
+	// current shell only exposes KITTY_WINDOW_ID.
+	return (
+		process.platform === "darwin" &&
+		isKittyTerminal(terminalInfo) &&
+		terminalInfo.kittyRemoteControlAvailable &&
+		Boolean(terminalInfo.kittyWindowID)
+	)
+}
+
+function shouldUseMacOSNotificationClickFocus(terminalInfo: TerminalInfo): boolean {
+	return process.platform === "darwin" && Boolean(terminalInfo.bundleId)
+}
+
+function escapeAppleScriptString(value: string): string {
+	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')
+}
+
+function buildKittyFocusArgs(terminalInfo: TerminalInfo): string[] | null {
+	if (!terminalInfo.kittyWindowID) return null
+
+	const args = ["@"]
+	if (terminalInfo.kittyListenOn) {
+		args.push("--to", terminalInfo.kittyListenOn)
+	}
+
+	args.push("focus-window", "--no-response", "--match", `id:${terminalInfo.kittyWindowID}`)
+	return args
+}
+
+async function focusKittyWindow(terminalInfo: TerminalInfo): Promise<void> {
+	const args = buildKittyFocusArgs(terminalInfo)
+	if (!args) return
+
+	try {
+		const proc = Bun.spawn(["kitty", ...args], {
+			stdin: "ignore",
+			stdout: "ignore",
+			stderr: "ignore",
+		})
+		await proc.exited
+	} catch {
+		// Ignore focus failures and keep the app-level activate fallback.
+	}
+}
+
+async function focusTerminalApplication(terminalInfo: TerminalInfo): Promise<void> {
+	if (process.platform !== "darwin") return
+	if (!terminalInfo.bundleId && !terminalInfo.processName) return
+
+	const lines: string[] = []
+
+	if (terminalInfo.bundleId) {
+		const bundleID = escapeAppleScriptString(terminalInfo.bundleId)
+		lines.push(`tell application id "${bundleID}" to reopen`)
+	}
+
+	if (terminalInfo.processName) {
+		const processName = escapeAppleScriptString(terminalInfo.processName)
+		lines.push(
+			'tell application "System Events"',
+			`\ttell process "${processName}"`,
+			"\t\trepeat with currentWindow in windows",
+			"\t\t\ttry",
+			'\t\t\t\tset value of attribute "AXMinimized" of currentWindow to false',
+			"\t\t\tend try",
+			"\t\tend repeat",
+			"\t\tset frontmost to true",
+			"\tend tell",
+			"end tell",
+		)
+	}
+
+	if (terminalInfo.bundleId) {
+		const bundleID = escapeAppleScriptString(terminalInfo.bundleId)
+		lines.push(`tell application id "${bundleID}" to activate`)
+	}
+
+	if (!lines.length) return
+	await runOsascript(lines.join("\n"))
+}
+
+async function focusTerminalFromNotification(terminalInfo: TerminalInfo): Promise<void> {
+	await focusTerminalApplication(terminalInfo)
+
+	if (shouldUseKittyClickFocus(terminalInfo)) {
+		await focusKittyWindow(terminalInfo)
+		return
+	}
+
+	if (terminalInfo.bundleId) {
+		await focusTerminalApplication(terminalInfo)
+	}
+}
+
 function sendNodeNotification(options: NotificationOptions): void {
 	const { title, message, sound, terminalInfo } = options
 
@@ -331,9 +571,25 @@ function sendNodeNotification(options: NotificationOptions): void {
 		sound,
 	}
 
-	// macOS-specific: click notification to focus terminal
+	// Keep the app-level activate fallback even when Kitty-specific click focus is enabled.
 	if (process.platform === "darwin" && terminalInfo.bundleId) {
 		notifyOptions.activate = terminalInfo.bundleId
+	}
+
+	if (shouldUseMacOSNotificationClickFocus(terminalInfo)) {
+		notifyOptions.wait = true
+		notifyOptions.timeout = MACOS_NOTIFICATION_CLICK_TIMEOUT_SECONDS
+		notifier.notify(
+			notifyOptions,
+			(error: unknown, response: unknown) => {
+				const normalizedResponse =
+					typeof response === "string" ? response.toLowerCase() : String(response).toLowerCase()
+				void error
+				if (normalizedResponse !== "click" && normalizedResponse !== "activate") return
+				void focusTerminalFromNotification(terminalInfo)
+			},
+		)
+		return
 	}
 
 	notifier.notify(notifyOptions)
@@ -378,16 +634,7 @@ async function handleSessionIdle(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	// Get session info for context
-	let sessionTitle = "Task"
-	try {
-		const session = await client.session.get({ path: { id: sessionID } })
-		if (session.data?.title) {
-			sessionTitle = session.data.title.slice(0, 50)
-		}
-	} catch {
-		// Use default title
-	}
+	const sessionTitle = await getSessionTitle(client, sessionID, "Task")
 
 	await sendNotification(
 		{
@@ -436,6 +683,8 @@ async function handleSessionError(
 }
 
 async function handlePermissionUpdated(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
 	notificationRuntime: NotificationRuntime,
@@ -449,10 +698,14 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
+	const message = await getSessionTitle(client, sessionID, "OC | OpenCode needs your input", {
+		prefix: "OC | ",
+	})
+
 	await sendNotification(
 		{
 			title: "Waiting for you",
-			message: "OpenCode needs your input",
+			message,
 			sound: config.sounds.permission,
 			terminalInfo,
 		},
@@ -461,19 +714,24 @@ async function handlePermissionUpdated(
 }
 
 async function handleQuestionAsked(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
 	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
-	// Guard: quiet hours only (no focus check for questions - tmux workflow)
+	// Guard: quiet hours only
 	if (isQuietHours(config)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
+	const message = await getSessionTitle(client, sessionID, "OC | OpenCode needs your input", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
 			title: "Question for you",
-			message: "OpenCode needs your input",
+			message,
 			sound,
 			terminalInfo,
 		},
@@ -488,19 +746,28 @@ async function handleQuestionAsked(
 export const NotifyPlugin: Plugin = async (ctx) => {
 	const { client } = ctx
 
+	// ACP hosts like Tidewave already own the foreground UX, so desktop notifications
+	// from the CLI plugin become noisy and misleading there.
+	if (isACPHostedSession()) {
+		return {}
+	}
+
 	// Load config once at startup
 	const config = await loadConfig()
 
 	// Detect terminal once at startup (cached for performance)
 	const terminalInfo = await detectTerminalInfo(config)
 	const notificationRuntime: NotificationRuntime = {
-		preferCmux: canUseCmuxNotification(),
+		preferCmux: canUseCmuxNotification() && !shouldUseKittySocketRemoteControl(terminalInfo),
 	}
 	const recentQuestionNotifications: RecentNotifications = new Map()
 	const recentReadyNotifications: RecentNotifications = new Map()
 	const recentPermissionNotifications: RecentNotifications = new Map()
 
-	const notifyQuestionIfNeeded = async (dedupeKey: string | null): Promise<void> => {
+	const notifyQuestionIfNeeded = async (
+		sessionID: string | null | undefined,
+		dedupeKey: string | null,
+	): Promise<void> => {
 		if (
 			dedupeKey &&
 			!shouldSendDedupedNotification(
@@ -512,7 +779,13 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 			return
 		}
 
-		await handleQuestionAsked(config, terminalInfo, notificationRuntime)
+		await handleQuestionAsked(
+			client as OpencodeClient,
+			sessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
 	}
 
 	const notifySessionReadyIfNeeded = async (sessionID: unknown): Promise<void> => {
@@ -539,6 +812,10 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 
 	const notifyPermissionIfNeeded = async (properties: unknown): Promise<void> => {
 		const dedupeKey = buildPermissionEventDedupeKey(properties)
+		const sessionID =
+			properties && typeof properties === "object"
+				? toNonEmptyString((properties as Record<string, unknown>).sessionID)
+				: null
 
 		if (
 			dedupeKey &&
@@ -551,13 +828,22 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 			return
 		}
 
-		await handlePermissionUpdated(config, terminalInfo, notificationRuntime)
+		await handlePermissionUpdated(
+			client as OpencodeClient,
+			sessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
 	}
 
 	return {
 		"tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }) => {
 			if (input.tool === "question") {
-				await notifyQuestionIfNeeded(buildQuestionToolDedupeKey(input.sessionID, input.callID))
+				await notifyQuestionIfNeeded(
+					input.sessionID,
+					buildQuestionToolDedupeKey(input.sessionID, input.callID),
+				)
 			}
 		},
 		event: async ({ event }: { event: Event }): Promise<void> => {
@@ -604,7 +890,7 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 				}
 				case "question.asked": {
 					const dedupeKey = buildQuestionEventDedupeKey(runtimeEvent.properties)
-					await notifyQuestionIfNeeded(dedupeKey)
+					await notifyQuestionIfNeeded(runtimeEvent.properties.sessionID, dedupeKey)
 					break
 				}
 			}
