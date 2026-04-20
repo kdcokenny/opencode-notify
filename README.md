@@ -105,7 +105,7 @@ Configuration keys:
 - `sounds`: per-event sounds (`idle`, `error`, `permission`, optional `question`).
 - `quietHours`: scheduled suppression window.
 
-**Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
+**Available macOS sounds:** You can use any sound that's available for selection as System Settings > Sounds > Alert Sound. The system default sounds are Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink.
 
 ## FAQ
 
