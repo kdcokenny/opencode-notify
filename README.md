@@ -85,6 +85,7 @@ Works out of the box. To customize, create `~/.config/opencode/kdco-notify.json`
 ```json
 {
   "notifyChildSessions": false,
+  "timeout": 0,
   "terminal": "ghostty",
   "sounds": {
     "idle": "Glass",
@@ -103,6 +104,7 @@ Works out of the box. To customize, create `~/.config/opencode/kdco-notify.json`
 Configuration keys:
 
 - `notifyChildSessions` (default `false`): when `true`, include child/sub-session `session.idle` and `session.error` notifications (question and permission notifications are unaffected).
+- `timeout` (default `0`): seconds before a desktop notification disappears automatically. Set to `0` for no timeout. Supported on macOS and Linux outside of cmux.
 - `terminal` (optional): override terminal auto-detection.
 - `sounds`: per-event sounds (`idle`, `error`, `permission`, optional `question`).
 - `quietHours`: scheduled suppression window.
